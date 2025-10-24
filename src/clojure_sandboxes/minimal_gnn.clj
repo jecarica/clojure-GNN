@@ -1,5 +1,11 @@
 (ns clojure-sandboxes.minimal-gnn
-  (:require [libpython-clj2.python :as py :refer [py. py.. py.-]]))
+  (:require [libpython-clj2.require :refer [require-python]]
+            [libpython-clj2.python :as py :refer [py. py.. py.-]]))
+
+(require-python '[torch :as torch]
+                '[torch.nn :as nn]
+                '[torch.optim :as optim]
+                '[numpy :as np])
 
 ;;; sudo pip3 install torch
 ;;; sudo pip3 install torch-geometric
@@ -40,9 +46,9 @@
 
 ;; Create individual layers
 (defn create-layers [num-features num-classes geom-nn nn]
-  {:conv1 (py/call-attr geom-nn "GCNConv" num-features 16)
-   :conv2 (py/call-attr geom-nn "GCNConv" 16 num-classes)
-   :dropout (py/call-attr nn "Dropout" 0.5)})
+  {:conv1 (py. geom-nn GCNConv num-features 16)
+   :conv2 (py. geom-nn GCNConv 16 num-classes)
+   :dropout (py. nn Dropout 0.5)})
 
 ;; Forward pass function
 (defn forward-pass [layers data torch]
@@ -50,7 +56,7 @@
         edge-index (py/get-attr data "edge_index")
         ;; First GCN layer
         h1 (py/call-attr (layers :conv1) "__call__" x edge-index)
-        h1 (py/call-attr torch "relu" h1)
+        h1 (py. torch relu h1)
         h1 (py/call-attr (layers :dropout) "__call__" h1)
         ;; Second GCN layer
         h2 (py/call-attr (layers :conv2) "__call__" h1 edge-index)
@@ -61,31 +67,31 @@
 ;; Training function
 (defn train [layers data optimizer torch nn-functional]
   (let [out (forward-pass layers data torch)
-        train-mask (py/call-attr (py/get-attr data "train_mask") "squeeze")
-        train-indices (py/call-attr (py/call-attr train-mask "nonzero") "squeeze")
+        train-mask (py. (py/get-attr data "train_mask") squeeze)
+        train-indices (py. (py. train-mask nonzero) squeeze)
         loss (py/call-attr nn-functional "nll_loss"
-                   (py/call-attr out "index_select" 0 train-indices)
+                   (py. out index_select 0 train-indices)
                    (py/call-attr (py/get-attr data "y") "index_select" 0 train-indices))]
-    (py/call-attr optimizer "zero_grad")
-    (py/call-attr loss "backward")
-    (py/call-attr optimizer "step")
-    (py/call-attr loss "item")))
+    (py. optimizer zero_grad)
+    (py. loss backward)
+    (py. optimizer step)
+    (py. loss item)))
 
 ;; Test function
 (defn test [layers data torch]
   (let [out (forward-pass layers data torch)
         pred (py/call-attr-kw out "argmax" [] {:dim 1})
-        test-mask (py/call-attr (py/get-attr data "test_mask") "squeeze")
-        test-indices (py/call-attr (py/call-attr test-mask "nonzero") "squeeze")
-        test-correct (py/call-attr
-                      (py/call-attr pred "index_select" 0 test-indices)
-                      "eq"
-                      (py/call-attr (py/get-attr data "y") "index_select" 0 test-indices))
-        test-acc (py/call-attr
-                  (py/call-attr (py/call-attr test-correct "sum") "float")
-                  "div"
-                  (py/call-attr test-mask "sum"))]
-    (py/call-attr test-acc "item")))
+        test-mask (py. (py/get-attr data "test_mask") squeeze)
+        test-indices (py. (py. test-mask nonzero) squeeze)
+        test-correct (py.
+                      (py. pred index_select 0 test-indices)
+                      eq
+                      (py. (py/get-attr data "y") index_select 0 test-indices))
+        test-acc (py.
+                  (py. (py. test-correct sum) float)
+                  div
+                  (py. test-mask sum))]
+    (py. test-acc item)))
 
 ;; Main training function
 (defn train-gnn [epochs learning-rate]
@@ -104,10 +110,10 @@
     (let [graph (create-toy-graph)
           data (create-data-object graph geom-data torch)
           layers (create-layers 3 3 geom-nn nn) ; 3 features, 3 classes
-          all-params (py/call-attr itertools "chain"
-                                   (py/call-attr (layers :conv1) "parameters")
-                                   (py/call-attr (layers :conv2) "parameters")
-                                   (py/call-attr (layers :dropout) "parameters"))
+          all-params (py. itertools chain
+                                   (py. (layers :conv1) parameters)
+                                   (py. (layers :conv2) parameters)
+                                   (py. (layers :dropout) parameters))
           optimizer (py/call-attr-kw optim "Adam" [all-params] {:lr learning-rate})]
 
       (println "Starting training...")
@@ -122,8 +128,8 @@
             predictions (py/call-attr-kw (forward-pass layers data torch) "argmax" [] {:dim 1})]
         (println (format "\nFinal Results:"))
         (println (format "Final Test Accuracy: %.4f" final-acc))
-        (println "True labels:" (py/call-attr (py/get-attr data "y") "tolist"))
-        (println "Predictions:" (py/call-attr predictions "tolist"))
+        (println "True labels:" (py. (py/get-attr data "y") tolist))
+        (println "Predictions:" (py. predictions tolist))
 
         {:layers layers
          :data data
